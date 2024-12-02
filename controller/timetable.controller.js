@@ -1,112 +1,269 @@
-const db = require('../config')
+const db = require('../config');
 
+class TimetableController {
 
-class UserController{
+    // Создание записи о расписании
+    async createTimetable(req, res) {
+        const { subject_id, group_id, teacher_id, day, placeInDay, start_time, end_time, place } = req.body;
 
-    //Создание пользователя
-    async createUser(req, res) {
-        const { login, pass } = req.body;
-    
-        // Сначала проверим, существует ли уже пользователь с таким логином
-        const checkUserSql = "SELECT * FROM users WHERE login = ?";
+        // Проверим, существует ли запись с таким расписанием для данной группы и дня
+        const checkTimetableSql = "SELECT * FROM timetable WHERE day = ? AND group_id = ? AND placeInDay = ?";
         
-        db.get(checkUserSql, [login], (err, row) => {
+        db.get(checkTimetableSql, [day, group_id, placeInDay], (err, row) => {
             if (err) {
                 return res.status(500).json({ error: 'Database error' });
             }
-    
-            // Если пользователь с таким логином уже существует
+
+            // Если расписание для данной группы в этот день уже существует
             if (row) {
-                return res.status(400).json({ error: 'User with this login already exists' });
+                return res.status(400).json({ error: 'Timetable for this group and day already exists' });
             }
-    
-            // Если логин уникален, продолжаем с созданием пользователя
-            const insertUserSql = "INSERT INTO users (login, pass, token) VALUES (?, ?, ?)";
-    
-            db.run(insertUserSql, [login, pass, ""], function(err) {
-                if (err) {
-                    return res.status(500).json({ error: 'Failed to create user' });
-                } else {
-                    return res.status(201).json({ id: this.lastID, login: login }); // Возвращаем ID нового пользователя
-                }
-            });
-        });
-    }
-    
 
-    //Получение пользователя
-    async getUser(req,res){
-        const { login, password} = req.body
-        const sql = (
-            `select * from users where (login=? AND pass=?);`
-        )
-        db.all(sql,[login, password], (err,rows) => {
-            if (err) return res.json(err)
-            if(rows.length === 0) return res.json('Данные не совпадают! Проверьте и повторите попытку')
-            else res.json(rows)
-    })
-    }
-
-
-    //Удаление пользователя
-    async deleteUser(req, res) {
-        const { id } = req.body;
-    
-        // Проверяем, указан ли id и является ли он числом
-        if (!id || isNaN(id)) {
-            return res.status(400).json({ message: 'Invalid user ID' });
-        }
-    
-        // Проверяем, существует ли пользователь с данным ID
-        const checkUserSql = 'SELECT * FROM users WHERE id = ?';
-    
-        db.get(checkUserSql, [id], (err, user) => {
-            if (err) {
-                return res.status(500).json({ error: err.message });
-            }
-    
-            // Если пользователь не существует, возвращаем ошибку
-            if (!user) {
-                return res.status(404).json({ message: 'User not found' });
-            }
-    
-            // Удаляем пользователя
-            const deleteSql = 'DELETE FROM users WHERE id = ?';
-    
-            db.run(deleteSql, [id], function (err) {
-                if (err) {
-                    return res.status(500).json({ error: err.message });
-                }
-    
-                // Проверяем, сколько записей было удалено
-                if (this.changes === 0) {
-                    return res.status(404).json({ message: 'User not found' });
-                }
-    
-                return res.json({ message: 'User deleted successfully' });
-            });
-        });
-    }
-    
-    
-    
-    //Установка токена телефона к юзеру
-    async setUserToken(req,res){
-        const {user, token} =req.body
+            // Если запись уникальна, продолжаем с добавлением нового расписания
+            const insertTimetableSql = `
+                INSERT INTO timetable (subject_id, group_id, teacher_id, day, placeInDay, start_time, end_time, place)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `;
         
-        const sql = (
-            ` update users set token=? where id=?;`
-        )
-
-        db.all(sql,[token, user], (err,rows) => {
-            if (err) return res.json(err)
-            else res.json(rows)
-        })
+            db.run(insertTimetableSql, [subject_id, group_id, teacher_id, day, placeInDay, start_time, end_time, place], function(err) {
+                if (err) {
+                    return res.status(500).json({ error: 'Failed to create timetable' });
+                } else {
+                    return res.status(201).json({ id: this.lastID, message: 'Timetable created successfully' });
+                }
+            });
+        });
     }
 
-    
+    // Получение расписания по дню и группе
+    async getTimetable(req, res) {
+        const { day, group_id } = req.params; // Получаем day и group_id из параметров запроса
+
+        const query = `
+            SELECT 
+                t.day,
+                t.placeInDay,
+                t.start_time,
+                t.end_time,
+                s.name AS subject_name,
+                g.name AS group_name,
+                te.fio AS teacher_fio,
+                t.place AS place
+            FROM timetable t
+            JOIN subjects s ON t.subject_id = s.id
+            JOIN groups g ON t.group_id = g.id
+            JOIN teachers te ON t.teacher_id = te.id
+            WHERE t.day = ? AND t.group_id = ?
+        `;
+        
+        db.all(query, [day, group_id], (err, rows) => {
+            if (err) {
+                return res.status(500).json({ error: 'Database error', details: err });
+            }
+            if (rows.length === 0) {
+                return res.status(404).json({ message: 'No timetable found for the given day and group' });
+            }
+            res.json(rows);
+        });
+    }
+    async getTimetableByGroup(req, res) {
+        const { group_id } = req.params; // Извлекаем идентификатор группы из параметров запроса
+
+        // Проверяем, что group_id существует и является числом
+        if (!group_id || isNaN(group_id)) {
+            return res.status(400).json({ error: 'Invalid group ID' });
+        }
+
+        // SQL запрос для получения расписания по группе
+        const query = `
+            SELECT 
+                t.id,
+                t.day,
+                t.placeInDay,
+                t.start_time,
+                t.end_time,
+                s.name AS subject_name,
+                g.name AS group_name,
+                te.fio AS teacher_fio
+            FROM timetable t
+            JOIN subjects s ON t.subject_id = s.id
+            JOIN groups g ON t.group_id = g.id
+            JOIN teachers te ON t.teacher_id = te.id
+            WHERE t.group_id = ?
+            ORDER BY t.day, t.placeInDay;
+        `;
+
+        // Выполняем запрос
+        db.all(query, [group_id], (err, rows) => {
+            if (err) {
+                console.error(err);
+                return res.status(500).json({ error: 'Database error', details: err });
+            }
+
+            // Если расписание для группы не найдено
+            if (rows.length === 0) {
+                return res.status(404).json({ message: 'No timetable found for the group' });
+            }
+
+            // Если расписание найдено, возвращаем его
+            return res.json({ timetable: rows });
+        });
+    }
+    async getTimetableByTeacher(req, res) {
+        const { teacher_id } = req.params; // Извлекаем идентификатор преподавателя из параметров запроса
+
+        // Проверяем, что teacher_id существует и является числом
+        if (!teacher_id || isNaN(teacher_id)) {
+            return res.status(400).json({ error: 'Invalid teacher ID' });
+        }
+
+        // SQL запрос для получения расписания по преподавателю
+        const query = `
+            SELECT 
+                t.id,
+                t.day,
+                t.placeInDay,
+                t.start_time,
+                t.end_time,
+                s.name AS subject_name,
+                g.name AS group_name,
+                te.fio AS teacher_fio
+            FROM timetable t
+            JOIN subjects s ON t.subject_id = s.id
+            JOIN groups g ON t.group_id = g.id
+            JOIN teachers te ON t.teacher_id = te.id
+            WHERE t.teacher_id = ?
+            ORDER BY t.day, t.placeInDay;
+        `;
+
+        // Выполняем запрос
+        db.all(query, [teacher_id], (err, rows) => {
+            if (err) {
+                console.error(err);
+                return res.status(500).json({ error: 'Database error', details: err });
+            }
+
+            // Если расписание для преподавателя не найдено
+            if (rows.length === 0) {
+                return res.status(404).json({ message: 'No timetable found for the teacher' });
+            }
+
+            // Если расписание найдено, возвращаем его
+            return res.json({ timetable: rows });
+        });
+    }
+    async getTimetableByPlace(req, res) {
+        const { place } = req.params; // Извлекаем место (аудиторию или локацию) из параметров запроса
+
+        // Проверяем, что place существует
+        if (!place) {
+            return res.status(400).json({ error: 'Invalid place' });
+        }
+
+        // SQL запрос для получения расписания по месту
+        const query = `
+            SELECT 
+                t.id,
+                t.day,
+                t.placeInDay,
+                t.start_time,
+                t.end_time,
+                s.name AS subject_name,
+                g.name AS group_name,
+                te.fio AS teacher_fio
+            FROM timetable t
+            JOIN subjects s ON t.subject_id = s.id
+            JOIN groups g ON t.group_id = g.id
+            JOIN teachers te ON t.teacher_id = te.id
+            WHERE t.place = ?
+            ORDER BY t.day, t.placeInDay;
+        `;
+
+        // Выполняем запрос
+        db.all(query, [place], (err, rows) => {
+            if (err) {
+                console.error(err);
+                return res.status(500).json({ error: 'Database error', details: err });
+            }
+
+            // Если расписание для места не найдено
+            if (rows.length === 0) {
+                return res.status(404).json({ message: 'No timetable found for this place' });
+            }
+
+            // Если расписание найдено, возвращаем его
+            return res.json({ timetable: rows });
+        });
+    }
+    async updateTimetable(req, res) {
+        const { id, subject_id, group_id, teacher_id, place, day, placeInDay, start_time, end_time } = req.body;
+
+        // Проверка на наличие всех необходимых данных
+        if (!id || !subject_id || !group_id || !teacher_id || !place || !day || !placeInDay || !start_time || !end_time) {
+            return res.status(400).json({ error: 'All fields are required' });
+        }
+
+        // SQL запрос для обновления записи в расписании
+        const updateQuery = `
+            UPDATE timetable
+            SET 
+                subject_id = ?, 
+                group_id = ?, 
+                teacher_id = ?, 
+                place = ?, 
+                day = ?, 
+                placeInDay = ?, 
+                start_time = ?, 
+                end_time = ?
+            WHERE id = ?;
+        `;
+
+        // Выполнение запроса
+        db.run(updateQuery, [subject_id, group_id, teacher_id, place, day, placeInDay, start_time, end_time, id], function (err) {
+            if (err) {
+                console.error(err);
+                return res.status(500).json({ error: 'Database error', details: err.message });
+            }
+
+            // Проверяем, была ли изменена хотя бы одна запись
+            if (this.changes === 0) {
+                return res.status(404).json({ message: 'Timetable entry not found' });
+            }
+
+            // Возвращаем успешный ответ
+            return res.json({ message: 'Timetable updated successfully' });
+        });
+    }
+
+
+    // Удаление записи расписания
+    async deleteTimetable(req, res) {
+        const { id } = req.body;
+
+        // Проверим, существует ли запись с таким id
+        const checkTimetableSql = 'SELECT * FROM timetable WHERE id = ?';
+        
+        db.get(checkTimetableSql, [id], (err, row) => {
+            if (err) {
+                return res.status(500).json({ error: 'Database error', details: err });
+            }
+            // Если запись не существует
+            if (!row) {
+                return res.status(404).json({ message: 'Timetable entry not found' });
+            }
+
+            // Удалим запись
+            const deleteTimetableSql = 'DELETE FROM timetable WHERE id = ?';
+
+            db.run(deleteTimetableSql, [id], function(err) {
+                if (err) {
+                    return res.status(500).json({ error: 'Failed to delete timetable entry', details: err });
+                }
+                return res.json({ message: 'Timetable entry deleted successfully' });
+            });
+        });
+    }
+
 }
 
-
-
-module.exports = new UserController()
+module.exports = new TimetableController();

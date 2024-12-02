@@ -6,8 +6,8 @@ const subjectsController = require('../controller/subjects.controller')
 
 //post
 router.post('/createSubject', subjectsController.createSubject)
-router.post('/getSubject', subjectsController.getSubject)
-
+router.post('/getSubjects', subjectsController.getSubjects)
+router.post('/getSubjectById', subjectsController.getSubjectById)
 //put
 router.put('/updateSubject', subjectsController.updateSubject)
 

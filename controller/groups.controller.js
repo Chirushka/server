@@ -1,77 +1,107 @@
-const db = require('../config')
+const db = require('../config');
 
+class groupsController {
 
-class UserController{
-
-    //Создание пользователя
-    async createUser(req, res) {
-        const { login, pass } = req.body;
+    // Создание группы
+    async createGroup(req, res) {
+        const { name } = req.body;
     
-        // Сначала проверим, существует ли уже пользователь с таким логином
-        const checkUserSql = "SELECT * FROM users WHERE login = ?";
+        // Сначала проверим, существует ли группа с таким же названием
+        const checkGroupSql = "SELECT * FROM groups WHERE name = ?";
         
-        db.get(checkUserSql, [login], (err, row) => {
+        db.get(checkGroupSql, [name], (err, row) => {
             if (err) {
                 return res.status(500).json({ error: 'Database error' });
             }
     
-            // Если пользователь с таким логином уже существует
+            // Если группа с таким названием уже существует
             if (row) {
-                return res.status(400).json({ error: 'User with this login already exists' });
+                return res.status(400).json({ error: 'Group with this name already exists' });
             }
     
-            // Если логин уникален, продолжаем с созданием пользователя
-            const insertUserSql = "INSERT INTO users (login, pass, token) VALUES (?, ?, ?)";
+            // Если группа уникальна, создаем новую
+            const insertGroupSql = "INSERT INTO groups (name) VALUES (?)";
     
-            db.run(insertUserSql, [login, pass, ""], function(err) {
+            db.run(insertGroupSql, [name], function (err) {
                 if (err) {
-                    return res.status(500).json({ error: 'Failed to create user' });
+                    return res.status(500).json({ error: 'Failed to create group' });
                 } else {
-                    return res.status(201).json({ id: this.lastID, login: login }); // Возвращаем ID нового пользователя
+                    return res.status(201).json({ id: this.lastID, name: name }); // Возвращаем ID новой группы
                 }
             });
         });
     }
-    
+    async updateGroup(req, res) {
+        const { group_id, name } = req.body;
 
-    //Получение пользователя
-    async getUser(req,res){
-        const { login, password} = req.body
-        const sql = (
-            `select * from users where (login=? AND pass=?);`
-        )
-        db.all(sql,[login, password], (err,rows) => {
-            if (err) return res.json(err)
-            if(rows.length === 0) return res.json('Данные не совпадают! Проверьте и повторите попытку')
-            else res.json(rows)
-    })
+        // Проверяем, указаны ли все необходимые данные
+        if (!group_id || !name) {
+            return res.status(400).json({ error: 'Group ID and name are required' });
+        }
+
+        // Проверяем, существует ли группа с данным ID
+        const checkGroupSql = 'SELECT * FROM groups WHERE id = ?';
+        db.get(checkGroupSql, [group_id], (err, row) => {
+            if (err) {
+                return res.status(500).json({ error: 'Database error', details: err });
+            }
+
+            // Если группа не существует
+            if (!row) {
+                return res.status(404).json({ message: 'Group not found' });
+            }
+
+            // Обновляем данные группы
+            const updateGroupSql = 'UPDATE groups SET name = ? WHERE id = ?';
+
+            db.run(updateGroupSql, [name, group_id], function(err) {
+                if (err) {
+                    return res.status(500).json({ error: 'Failed to update group', details: err });
+                }
+
+                // Проверим, были ли внесены изменения
+                if (this.changes === 0) {
+                    return res.status(404).json({ message: 'No changes made to the group' });
+                }
+
+                return res.json({ message: 'Group updated successfully', updated_id: group_id });
+            });
+        });
     }
 
+    // Получение списка групп
+    async getGroups(req, res) {
+        const sql = "SELECT * FROM groups";
+        db.all(sql, [], (err, rows) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json(rows);
+        });
+    }
 
-    //Удаление пользователя
-    async deleteUser(req, res) {
+    // Удаление группы
+    async deleteGroup(req, res) {
         const { id } = req.body;
     
         // Проверяем, указан ли id и является ли он числом
         if (!id || isNaN(id)) {
-            return res.status(400).json({ message: 'Invalid user ID' });
+            return res.status(400).json({ message: 'Invalid group ID' });
         }
     
-        // Проверяем, существует ли пользователь с данным ID
-        const checkUserSql = 'SELECT * FROM users WHERE id = ?';
+        // Проверяем, существует ли группа с данным ID
+        const checkGroupSql = 'SELECT * FROM groups WHERE id = ?';
     
-        db.get(checkUserSql, [id], (err, user) => {
+        db.get(checkGroupSql, [id], (err, group) => {
             if (err) {
                 return res.status(500).json({ error: err.message });
             }
     
-            // Если пользователь не существует, возвращаем ошибку
-            if (!user) {
-                return res.status(404).json({ message: 'User not found' });
+            // Если группа не существует, возвращаем ошибку
+            if (!group) {
+                return res.status(404).json({ message: 'Group not found' });
             }
     
-            // Удаляем пользователя
-            const deleteSql = 'DELETE FROM users WHERE id = ?';
+            // Удаляем группу
+            const deleteSql = 'DELETE FROM groups WHERE id = ?';
     
             db.run(deleteSql, [id], function (err) {
                 if (err) {
@@ -80,33 +110,13 @@ class UserController{
     
                 // Проверяем, сколько записей было удалено
                 if (this.changes === 0) {
-                    return res.status(404).json({ message: 'User not found' });
+                    return res.status(404).json({ message: 'Group not found' });
                 }
     
-                return res.json({ message: 'User deleted successfully' });
+                return res.json({ message: 'Group deleted successfully' });
             });
         });
     }
-    
-    
-    
-    //Установка токена телефона к юзеру
-    async setUserToken(req,res){
-        const {user, token} =req.body
-        
-        const sql = (
-            ` update users set token=? where id=?;`
-        )
-
-        db.all(sql,[token, user], (err,rows) => {
-            if (err) return res.json(err)
-            else res.json(rows)
-        })
-    }
-
-    
 }
 
-
-
-module.exports = new UserController()
+module.exports = new groupsController();

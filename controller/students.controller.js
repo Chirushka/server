@@ -7,7 +7,7 @@ class StudentsController{
 
     //Создание пользователя
     async createStudent(req, res) {
-        const { fio, login, pass, token, group_id } = req.body;
+        const { fio, login, pass, group_id } = req.body;
     
         // Сначала проверим, существует ли уже пользователь с таким логином
         const checkStudentSql = "SELECT * FROM students WHERE login = ?";
